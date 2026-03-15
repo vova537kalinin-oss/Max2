@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto P2P Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f0f; color: #fff; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .app { width: 100%; max-width: 450px; background: #1a1a1a; height: 90vh; display: flex; flex-direction: column; border-radius: 15px; overflow: hidden; border: 1px solid #333; }
+        .header { padding: 15px; background: #252525; border-bottom: 1px solid #333; text-align: center; }
+        #messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 10px 15px; border-radius: 12px; max-width: 75%; word-wrap: break-word; font-size: 0.9em; }
+        .mine { background: #0056b3; align-self: flex-end; }
+        .theirs { background: #333; align-self: flex-start; }
+        .controls { padding: 15px; background: #252525; display: flex; flex-direction: column; gap: 10px; }
+        input { padding: 12px; border-radius: 8px; border: 1px solid #444; background: #121212; color: white; outline: none; }
+        button { padding: 12px; border-radius: 8px; border: none; background: #28a745; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { background: #218838; }
+        .seed-box { font-size: 0.75em; color: #aaa; background: #121212; padding: 10px; border-radius: 5px; border: 1px dashed #555; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="app">
+    <div class="header">
+        <div id="status">🔐 Инициализация...</div>
+    </div>
+
+    <div id="messages"></div>
+
+    <div class="controls">
+        <div class="seed-box" id="seedDisplay">Ваша сид-фраза генерируется...</div>
+        
+        <input type="text" id="targetPeerId" placeholder="ID собеседника для связи">
+        <button id="connectBtn" onclick="connectToPeer()">Соединиться</button>
+        
+        <hr style="border: 0; border-top: 1px solid #333; margin: 5px 0;">
+        
+        <div style="display: flex; gap: 5px;">
+            <input type="text" id="msgInput" style="flex: 1;" placeholder="Сообщение..." disabled>
+            <button id="sendBtn" onclick="sendMessage()" disabled>➤</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let peer, conn;
+    const messagesEl = document.getElementById('messages');
+    const seedBox = document.getElementById('seedDisplay');
+    const statusEl = document.getElementById('status');
+
+    // 1. Генерируем или загружаем СИД-фразу
+    let mnemonic = localStorage.getItem('chat_seed') || ethers.Mnemonic.entropyToPhrase(ethers.randomBytes(16));
+    localStorage.setItem('chat_seed', mnemonic);
+    seedBox.innerText = "Ваш Сид: " + mnemonic;
+
+    // Создаем уникальный ID на основе фразы (простой хэш для PeerJS)
+    const myId = ethers.id(mnemonic).substring(0, 16); 
+
+    // 2. Инициализация PeerJS
+    peer = new Peer(myId);
+
+    peer.on('open', (id) => {
+        statusEl.innerText = "Ваш ID: " + id;
+        loadHistory();
+    });
+
+    peer.on('connection', (c) => {
+        conn = c;
+        setupChat();
+    });
+
+    function connectToPeer() {
+        const targetId = document.getElementById('targetPeerId').value;
+        if (!targetId) return;
+        conn = peer.connect(targetId);
+        setupChat();
+    }
+
+    function setupChat() {
+        conn.on('open', () => {
+            statusEl.innerText = "🟢 На связи";
+            document.getElementById('msgInput').disabled = false;
+            document.getElementById('sendBtn').disabled = false;
+        });
+
+        conn.on('data', (data) => {
+            addMessage(data, 'theirs', true);
+        });
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('msgInput');
+        if (!input.value) return;
+        
+        conn.send(input.value);
+        addMessage(input.value, 'mine', true);
+        input.value = '';
+    }
+
+    function addMessage(text, type, save) {
+        const div = document.createElement('div');
+        div.className = `msg ${type}`;
+        div.innerText = text;
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+
+        if (save) {
+            let history = JSON.parse(localStorage.getItem('chat_history') || '[]');
+            history.push({ text, type });
+            localStorage.setItem('chat_history', JSON.stringify(history));
+        }
+    }
+
+    function loadHistory() {
+        let history = JSON.parse(localStorage.getItem('chat_history') || '[]');
+        history.forEach(m => addMessage(m.text, m.type, false));
+    }
+</script>
+</body>
+</html>
